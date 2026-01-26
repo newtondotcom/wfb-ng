@@ -28,7 +28,7 @@ impl Drop for AlignedBuffer {
 }
 
 fn main() {
-    println!("FEC acceleration: {}", zfex::ZFEX_OPT);
+    println!("FEC acceleration: {}", zfex::zfex_opt());
     let k = 8;
     let n = 12;
     let block_size = 4095usize;

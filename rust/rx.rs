@@ -1405,7 +1405,7 @@ pub fn run(args: Vec<String>) -> i32 {
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
         Err(_) => {
-            eprintln!("WFB-ng version {}, FEC: {}", WFB_VERSION, zfex::ZFEX_OPT);
+            eprintln!("WFB-ng version {}, FEC: {}", WFB_VERSION, zfex::zfex_opt());
             return 1;
         }
     };

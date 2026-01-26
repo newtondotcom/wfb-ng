@@ -1,6 +1,6 @@
 use std::mem;
 use std::ptr;
-use std::sync::Once;
+use std::sync::{Once, OnceLock};
 
 pub type Gf = u8;
 
@@ -17,7 +17,20 @@ pub enum ZfexStatusCode {
     DecodeInvalidBlockIndex = 4,
 }
 
-pub const ZFEX_OPT: &str = "noaccel";
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum SimdKind {
+    None,
+    Ssse3,
+    Neon,
+}
+
+pub fn zfex_opt() -> &'static str {
+    match simd_kind() {
+        SimdKind::Ssse3 => "SSSE3",
+        SimdKind::Neon => "NEON",
+        SimdKind::None => "noaccel",
+    }
+}
 
 #[derive(Clone)]
 pub struct Fec {
@@ -28,10 +41,15 @@ pub struct Fec {
 
 static INIT: Once = Once::new();
 
+#[repr(align(16))]
+#[derive(Copy, Clone)]
+struct Align16<T>(T);
+
 static mut GF_EXP: [Gf; 510] = [0; 510];
 static mut GF_LOG: [i32; 256] = [0; 256];
 static mut INVERSE: [Gf; 256] = [0; 256];
-static mut GF_MUL_TABLE: [[Gf; 256]; 256] = [[0; 256]; 256];
+static mut GF_MUL_TABLE: [Align16<[Gf; 256]>; 256] = [Align16([0; 256]); 256];
+static mut GF_MUL_TABLE_16: [Align16<[Gf; 16]>; 256] = [Align16([0; 16]); 256];
 
 fn init_fec() {
     INIT.call_once(|| unsafe {
@@ -53,13 +71,19 @@ unsafe fn init_mul_table() {
     for i in 0..256 {
         for j in 0..256 {
             let idx = modnn(GF_LOG[i] + GF_LOG[j]);
-            GF_MUL_TABLE[i][j] = GF_EXP[idx as usize];
+            GF_MUL_TABLE[i].0[j] = GF_EXP[idx as usize];
         }
     }
 
     for j in 0..256 {
-        GF_MUL_TABLE[0][j] = 0;
-        GF_MUL_TABLE[j][0] = 0;
+        GF_MUL_TABLE[0].0[j] = 0;
+        GF_MUL_TABLE[j].0[0] = 0;
+    }
+
+    for i in 0..256 {
+        for j in 0..16 {
+            GF_MUL_TABLE_16[i].0[j] = GF_MUL_TABLE[i].0[j << 4];
+        }
     }
 }
 
@@ -102,16 +126,153 @@ unsafe fn generate_gf() {
 
 #[inline]
 unsafe fn gf_mul(x: Gf, y: Gf) -> Gf {
-    GF_MUL_TABLE[x as usize][y as usize]
+    GF_MUL_TABLE[x as usize].0[y as usize]
 }
 
-unsafe fn addmul(dst: *mut Gf, src: *const Gf, c: Gf, sz: usize) {
+unsafe fn addmul_scalar(dst: *mut Gf, src: *const Gf, c: Gf, sz: usize) {
     if c == 0 {
         return;
     }
     for i in 0..sz {
         let val = gf_mul(*src.add(i), c);
         *dst.add(i) ^= val;
+    }
+}
+
+fn simd_kind() -> SimdKind {
+    static SIMD_KIND: OnceLock<SimdKind> = OnceLock::new();
+    *SIMD_KIND.get_or_init(|| {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            if std::arch::is_x86_feature_detected!("ssse3") {
+                return SimdKind::Ssse3;
+            }
+        }
+        #[cfg(target_arch = "aarch64")]
+        {
+            if std::arch::is_aarch64_feature_detected!("neon") {
+                return SimdKind::Neon;
+            }
+        }
+        #[cfg(target_arch = "arm")]
+        {
+            if std::arch::is_arm_feature_detected!("neon") {
+                return SimdKind::Neon;
+            }
+        }
+        SimdKind::None
+    })
+}
+
+#[inline]
+fn is_aligned(ptr: *const Gf) -> bool {
+    (ptr as usize) % ZFEX_SIMD_ALIGNMENT == 0
+}
+
+unsafe fn addmul(dst: *mut Gf, src: *const Gf, c: Gf, sz: usize) {
+    if c == 0 {
+        return;
+    }
+    if sz >= ZFEX_SIMD_ALIGNMENT && is_aligned(dst) && is_aligned(src) {
+        match simd_kind() {
+            SimdKind::Ssse3 => {
+                #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                unsafe {
+                    addmul_ssse3(dst, src, c, sz);
+                    return;
+                }
+            }
+            SimdKind::Neon => {
+                #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
+                unsafe {
+                    addmul_neon(dst, src, c, sz);
+                    return;
+                }
+            }
+            SimdKind::None => {}
+        }
+    }
+    addmul_scalar(dst, src, c, sz);
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "ssse3")]
+unsafe fn addmul_ssse3(dst: *mut Gf, src: *const Gf, c: Gf, sz: usize) {
+    #[cfg(target_arch = "x86")]
+    use std::arch::x86::*;
+    #[cfg(target_arch = "x86_64")]
+    use std::arch::x86_64::*;
+
+    let vmul_lo = _mm_load_si128(GF_MUL_TABLE[c as usize].0.as_ptr() as *const __m128i);
+    let vmul_hi = _mm_load_si128(GF_MUL_TABLE_16[c as usize].0.as_ptr() as *const __m128i);
+    let mask = _mm_set1_epi8(0x0f as i8);
+    let mut i = 0usize;
+    while i + 16 <= sz {
+        let vsrc = _mm_load_si128(src.add(i) as *const __m128i);
+        let vdst = _mm_load_si128(dst.add(i) as *const __m128i);
+        let vsrc_lo = _mm_and_si128(vsrc, mask);
+        let vsrc_hi = _mm_and_si128(_mm_srli_epi16(vsrc, 4), mask);
+        let mul_lo = _mm_shuffle_epi8(vmul_lo, vsrc_lo);
+        let mul_hi = _mm_shuffle_epi8(vmul_hi, vsrc_hi);
+        let to_xor = _mm_xor_si128(mul_lo, mul_hi);
+        _mm_store_si128(dst.add(i) as *mut __m128i, _mm_xor_si128(vdst, to_xor));
+        i += 16;
+    }
+    if i < sz {
+        addmul_scalar(dst.add(i), src.add(i), c, sz - i);
+    }
+}
+
+#[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
+#[target_feature(enable = "neon")]
+unsafe fn addmul_neon(dst: *mut Gf, src: *const Gf, c: Gf, sz: usize) {
+    #[cfg(target_arch = "aarch64")]
+    use std::arch::aarch64::*;
+    #[cfg(target_arch = "arm")]
+    use std::arch::arm::*;
+
+    let mask = vdupq_n_u8(0x0f);
+    let vmul_lo = vld1q_u8(GF_MUL_TABLE[c as usize].0.as_ptr());
+    let vmul_hi = vld1q_u8(GF_MUL_TABLE_16[c as usize].0.as_ptr());
+    let mut i = 0usize;
+    while i + 16 <= sz {
+        let vsrc = vld1q_u8(src.add(i));
+        let vdst = vld1q_u8(dst.add(i));
+        let vsrc_lo = vandq_u8(vsrc, mask);
+        let vsrc_hi = vshrq_n_u8(vsrc, 4);
+
+        #[cfg(target_arch = "aarch64")]
+        let to_xor = {
+            let mul_lo = vqtbl1q_u8(vmul_lo, vsrc_lo);
+            let mul_hi = vqtbl1q_u8(vmul_hi, vsrc_hi);
+            veorq_u8(mul_lo, mul_hi)
+        };
+
+        #[cfg(target_arch = "arm")]
+        let to_xor = {
+            let tbl_lo = uint8x8x2_t {
+                0: vget_low_u8(vmul_lo),
+                1: vget_high_u8(vmul_lo),
+            };
+            let tbl_hi = uint8x8x2_t {
+                0: vget_low_u8(vmul_hi),
+                1: vget_high_u8(vmul_hi),
+            };
+            let lo_low = vtbl2_u8(tbl_lo, vget_low_u8(vsrc_lo));
+            let lo_high = vtbl2_u8(tbl_lo, vget_high_u8(vsrc_lo));
+            let hi_low = vtbl2_u8(tbl_hi, vget_low_u8(vsrc_hi));
+            let hi_high = vtbl2_u8(tbl_hi, vget_high_u8(vsrc_hi));
+            let low = veor_u8(lo_low, hi_low);
+            let high = veor_u8(lo_high, hi_high);
+            vcombine_u8(low, high)
+        };
+
+        let res = veorq_u8(vdst, to_xor);
+        vst1q_u8(dst.add(i), res);
+        i += 16;
+    }
+    if i < sz {
+        addmul_scalar(dst.add(i), src.add(i), c, sz - i);
     }
 }
 
