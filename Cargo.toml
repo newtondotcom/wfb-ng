@@ -41,11 +41,12 @@ path = "rust/bin/libsodium_test.rs"
 
 [dependencies]
 getopts = "0.2"
-glib = "0.20"
-gstreamer = "0.23"
-gstreamer-rtsp-server = "0.23"
+glib = "0.19"
+gstreamer = "0.22"
+gstreamer-rtsp-server = "0.22"
 libc = "0.2"
 libsodium-sys = "0.2"
 memoffset = "0.9"
 pcap-sys = "0.1"
+
 
