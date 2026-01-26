@@ -1,7 +1,7 @@
 use std::env;
 use std::io::Write;
 
-use glib::{ControlFlow, MainLoop};
+use glib::{MainLoop, Continue};
 use gstreamer as gst;
 use gstreamer_rtsp_server as gst_rtsp_server;
 
@@ -108,7 +108,7 @@ fn main() {
         if let Some(pool) = server_clone.session_pool() {
             pool.cleanup();
         }
-        ControlFlow::Continue
+        Continue(true)
     });
 
     println!(
