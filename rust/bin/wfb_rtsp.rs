@@ -99,7 +99,7 @@ fn main() {
 
     drop(mounts);
 
-    if server.attach(None).is_none() {
+    if server.attach(None).is_err() {
         eprintln!("failed to attach the server");
         std::process::exit(1);
     }

@@ -260,7 +260,7 @@ fn get_radio(_progname: &str, port: i32, _args: &[String]) -> i32 {
 
 fn main() {
     unsafe {
-        if libc::signal(libc::SIGALRM, alarm_handler as usize) == libc::SIG_ERR {
+        if libc::signal(libc::SIGALRM, alarm_handler as *const () as usize) == libc::SIG_ERR {
             libc::perror(b"signal\0".as_ptr() as *const _);
             std::process::exit(1);
         }

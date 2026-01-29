@@ -728,9 +728,9 @@ pub fn run(args: Vec<String>) -> i32 {
     let mut vht_nss: u8 = 1;
     let mut vht_mode = false;
     let mut keypair = "tx.key".to_string();
-    let mut frame_type = FRAME_TYPE_DATA;
+    let frame_type = FRAME_TYPE_DATA;
     let mut use_qdisc = false;
-    let mut fwmark: u32 = 0;
+    let fwmark: u32 = 0;
     let mut tx_mode = TxMode::Local;
 
     let mut opts = getopts::Options::new();

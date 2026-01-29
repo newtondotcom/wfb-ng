@@ -63,9 +63,7 @@ fn open_tun(dev: &str, dev_addr: &str) -> io::Result<RawFd> {
             len,
         );
     }
-    unsafe {
-        ifr.ifr_ifru.ifru_flags = (libc::IFF_TUN | libc::IFF_NO_PI) as i16;
-    }
+    ifr.ifr_ifru.ifru_flags = (libc::IFF_TUN | libc::IFF_NO_PI) as i16;
 
     let rc = unsafe { libc::ioctl(fd, libc::TUNSETIFF, &ifr) };
     if rc < 0 {

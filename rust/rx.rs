@@ -831,6 +831,7 @@ impl BaseAggregator for Aggregator {
         let mut decrypted = vec![0u8; MAX_FEC_PAYLOAD];
         let mut decrypted_len: u64 = 0;
         let block_hdr = unsafe { &*(buf.as_ptr() as *const WblockHdr) };
+        let data_nonce = block_hdr.data_nonce;
         let rc = unsafe {
             libsodium_sys::crypto_aead_chacha20poly1305_decrypt(
                 decrypted.as_mut_ptr(),
@@ -840,7 +841,7 @@ impl BaseAggregator for Aggregator {
                 (buf.len() - mem::size_of::<WblockHdr>()) as u64,
                 buf.as_ptr(),
                 mem::size_of::<WblockHdr>() as u64,
-                &block_hdr.data_nonce as *const _ as *const u8,
+                &data_nonce as *const _ as *const u8,
                 self.session_key.as_ptr(),
             )
         };
@@ -1299,7 +1300,7 @@ fn network_loop(
     rcv_buf_size: i32,
 ) -> io::Result<()> {
     let mut fwd_hdr: Wrxfwd = unsafe { mem::zeroed() };
-    let mut sockaddr: libc::sockaddr_in = unsafe { mem::zeroed() };
+    let mut sockaddr: libc::sockaddr_in;
     let mut buf = vec![0u8; MAX_FORWARDER_PACKET_SIZE];
 
     let mut log_send_ts = get_time_ms().unwrap_or(0);

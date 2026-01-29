@@ -220,7 +220,7 @@ pub unsafe fn ieee80211_radiotap_iterator_next(
 ) -> i32 {
     loop {
         let mut hit = false;
-        let mut align = 0;
+        let align: i32;
         let mut size = 0;
 
         if ((*iterator)._arg_index % 32) == IEEE80211_RADIOTAP_EXT
