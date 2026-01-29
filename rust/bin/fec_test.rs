@@ -34,7 +34,7 @@ fn main() {
     let block_size = 4095usize;
 
     let fec = zfex::fec_new(k as u16, n as u16).expect("fec_new");
-    let mut blocks: Vec<AlignedBuffer> = (0..n)
+    let blocks: Vec<AlignedBuffer> = (0..n)
         .map(|_| {
             let size = (block_size + zfex::ZFEX_SIMD_ALIGNMENT - 1)
                 & !(zfex::ZFEX_SIMD_ALIGNMENT - 1);
