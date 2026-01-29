@@ -16,6 +16,7 @@ fn main() {
     )
     .expect("write wfb_version.rs");
 
+    println!("cargo:rustc-link-lib=pcap");
     println!("cargo:rerun-if-env-changed=VERSION");
     println!("cargo:rerun-if-env-changed=COMMIT");
 }

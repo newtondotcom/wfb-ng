@@ -29,11 +29,11 @@ impl Drop for AlignedBuffer {
 
 fn main() {
     println!("FEC acceleration: {}", zfex::zfex_opt());
-    let k = 8;
-    let n = 12;
+    let k: usize = 8;
+    let n: usize = 12;
     let block_size = 4095usize;
 
-    let fec = zfex::fec_new(k, n).expect("fec_new");
+    let fec = zfex::fec_new(k as u16, n as u16).expect("fec_new");
     let mut blocks: Vec<AlignedBuffer> = (0..n)
         .map(|_| {
             let size = (block_size + zfex::ZFEX_SIMD_ALIGNMENT - 1)
@@ -48,7 +48,11 @@ fn main() {
         }
     }
 
-    let in_blocks: Vec<*const u8> = blocks.iter().take(k).map(|b| b.ptr).collect();
+    let in_blocks: Vec<*const u8> = blocks
+        .iter()
+        .take(k)
+        .map(|b| b.ptr as *const u8)
+        .collect();
     let out_blocks: Vec<*mut u8> = blocks.iter().skip(k).map(|b| b.ptr).collect();
     let rc = zfex::fec_encode_simd(&fec, &in_blocks, &out_blocks, block_size);
     assert_eq!(rc, ZfexStatusCode::Ok);
@@ -59,10 +63,10 @@ fn main() {
 
     for i in 0..k {
         if i < 2 * k - n {
-            block_dec_in[i] = blocks[i].ptr;
+            block_dec_in[i] = blocks[i].ptr as *const u8;
             index[i] = i as u32;
         } else {
-            block_dec_in[i] = blocks[i + n - k].ptr;
+            block_dec_in[i] = blocks[i + n - k].ptr as *const u8;
             index[i] = (i + n - k) as u32;
             block_dec_out.push(blocks[i].ptr);
             unsafe {

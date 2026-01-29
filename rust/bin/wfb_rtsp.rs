@@ -1,9 +1,10 @@
 use std::env;
 use std::io::Write;
 
-use glib::{MainLoop, Continue};
+use glib::{ControlFlow, MainLoop};
 use gstreamer as gst;
 use gstreamer_rtsp_server as gst_rtsp_server;
+use gstreamer_rtsp_server::prelude::*;
 
 use wfb_ng::version::WFB_VERSION;
 
@@ -108,7 +109,7 @@ fn main() {
         if let Some(pool) = server_clone.session_pool() {
             pool.cleanup();
         }
-        Continue(true)
+        ControlFlow::Continue
     });
 
     println!(

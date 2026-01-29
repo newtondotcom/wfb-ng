@@ -1,5 +1,11 @@
 use wfb_ng::wifibroadcast::WsessionData;
 
+fn randombytes(buf: &mut [u8]) {
+    unsafe {
+        libsodium_sys::randombytes_buf(buf.as_mut_ptr() as *mut libc::c_void, buf.len());
+    }
+}
+
 fn main() {
     unsafe {
         if libsodium_sys::sodium_init() < 0 {
@@ -74,10 +80,10 @@ fn main() {
     let mut decrypted = [0u8; 4096];
 
     unsafe {
-        libsodium_sys::randombytes_buf(key.as_mut_ptr(), key.len());
-        libsodium_sys::randombytes_buf(nonce.as_mut_ptr(), nonce.len());
-        libsodium_sys::randombytes_buf(message.as_mut_ptr(), message.len());
-        libsodium_sys::randombytes_buf(ad.as_mut_ptr(), ad.len());
+        randombytes(&mut key);
+        randombytes(&mut nonce);
+        randombytes(&mut message);
+        randombytes(&mut ad);
 
         let mut clen: u64 = 0;
         let rc = libsodium_sys::crypto_aead_chacha20poly1305_encrypt(
@@ -124,8 +130,8 @@ fn main() {
     unsafe {
         libsodium_sys::crypto_box_keypair(pk_sender.as_mut_ptr(), sk_sender.as_mut_ptr());
         libsodium_sys::crypto_box_keypair(pk_recipient.as_mut_ptr(), sk_recipient.as_mut_ptr());
-        libsodium_sys::randombytes_buf(message.as_mut_ptr(), message.len());
-        libsodium_sys::randombytes_buf(nonce.as_mut_ptr(), nonce.len());
+        randombytes(&mut message);
+        randombytes(&mut nonce);
 
         let rc = libsodium_sys::crypto_box_easy(
             ciphertext.as_mut_ptr(),

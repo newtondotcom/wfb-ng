@@ -3,6 +3,8 @@ use std::fs::File;
 use std::io::{self, Write};
 use libc;
 
+const RNDGETENTCNT: libc::c_ulong = 0x80045200;
+
 use wfb_ng::version::WFB_VERSION;
 
 fn warn_entropy() {
@@ -11,7 +13,7 @@ fn warn_entropy() {
         let fd = libc::open(path.as_ptr(), libc::O_RDONLY);
         if fd >= 0 {
             let mut cnt: libc::c_int = 0;
-            if libc::ioctl(fd, libc::RNDGETENTCNT, &mut cnt) == 0 && cnt < 160 {
+            if libc::ioctl(fd, RNDGETENTCNT, &mut cnt) == 0 && cnt < 160 {
                 eprintln!("This system doesn't provide enough entropy to quickly generate high-quality random numbers.");
                 eprintln!("Installing the rng-utils/rng-tools, jitterentropy or haveged packages may help.");
                 eprintln!("On virtualized Linux environments, also consider using virtio-rng.");
@@ -62,7 +64,7 @@ fn main() -> io::Result<()> {
                 pass.len() as u64,
                 salt.as_ptr(),
                 libsodium_sys::crypto_pwhash_argon2i_OPSLIMIT_INTERACTIVE as u64,
-                libsodium_sys::crypto_pwhash_argon2i_MEMLIMIT_INTERACTIVE,
+            libsodium_sys::crypto_pwhash_argon2i_MEMLIMIT_INTERACTIVE as usize,
                 libsodium_sys::crypto_pwhash_ALG_ARGON2I13 as i32,
             )
         };
