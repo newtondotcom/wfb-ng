@@ -53,6 +53,8 @@ pub struct Ieee80211RadiotapNamespace {
     pub subns: u8,
 }
 
+unsafe impl Sync for Ieee80211RadiotapNamespace {}
+
 #[repr(C)]
 pub struct Ieee80211RadiotapVendorNamespaces {
     pub ns: *const Ieee80211RadiotapNamespace,

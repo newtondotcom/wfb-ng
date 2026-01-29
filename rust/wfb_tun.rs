@@ -2,6 +2,7 @@ use std::ffi::CString;
 use std::io;
 use std::mem;
 use std::os::unix::io::RawFd;
+use std::net::Ipv4Addr;
 use std::process::Command;
 use std::ptr;
 use std::time::{Duration, Instant};
@@ -186,8 +187,8 @@ fn handle_tun_read(
         return Err(io::Error::last_os_error());
     }
 
-    let hdr_ptr = buf.data.as_mut_ptr().add(buf.data_size) as *mut TunPacketHdr;
     unsafe {
+        let hdr_ptr = buf.data.as_mut_ptr().add(buf.data_size) as *mut TunPacketHdr;
         (*hdr_ptr).packet_size = (nread as u16).to_be();
     }
     buf.data_size += mem::size_of::<TunPacketHdr>() + nread as usize;
@@ -355,18 +356,14 @@ pub fn run(args: Vec<String>) -> i32 {
             "-c" => {
                 i += 1;
                 if let Some(val) = args.get(i) {
-                    let cstr = CString::new(val.as_str()).unwrap();
-                    let rc = unsafe {
-                        libc::inet_pton(
-                            libc::AF_INET,
-                            cstr.as_ptr(),
-                            &mut peer_addr.sin_addr as *mut _ as *mut _,
-                        )
+                    let ip: Ipv4Addr = match val.parse() {
+                        Ok(ip) => ip,
+                        Err(_) => {
+                            eprintln!("invalid address");
+                            return 1;
+                        }
                     };
-                    if rc != 1 {
-                        eprintln!("invalid address");
-                        return 1;
-                    }
+                    peer_addr.sin_addr.s_addr = u32::from(ip);
                 }
             }
             "-u" => {

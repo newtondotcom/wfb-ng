@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::ffi::CString;
 use std::io;
 use std::mem;
 use std::ptr;
@@ -9,6 +8,7 @@ use libc;
 
 use crate::version::WFB_VERSION;
 use crate::wifibroadcast::*;
+use crate::{ipc_msg, ipc_msg_send, wfb_dbg};
 use crate::zfex;
 
 #[derive(Clone, Debug)]
@@ -235,7 +235,7 @@ impl TransmitterCore {
 
         unsafe {
             libsodium_sys::randombytes_buf(
-                self.session_key.as_mut_ptr(),
+                self.session_key.as_mut_ptr() as *mut libc::c_void,
                 self.session_key.len(),
             );
         }
@@ -244,7 +244,7 @@ impl TransmitterCore {
         unsafe {
             (*session_hdr_ptr).packet_type = WFB_PACKET_SESSION;
             libsodium_sys::randombytes_buf(
-                (*session_hdr_ptr).session_nonce.as_mut_ptr(),
+                (*session_hdr_ptr).session_nonce.as_mut_ptr() as *mut libc::c_void,
                 (*session_hdr_ptr).session_nonce.len(),
             );
         }
@@ -317,7 +317,7 @@ impl TransmitterCore {
                 block_hdr_ptr as *const u8,
                 mem::size_of::<WblockHdr>() as u64,
                 ptr::null(),
-                &(*block_hdr_ptr).data_nonce as *const _ as *const u8,
+                ptr::addr_of!((*block_hdr_ptr).data_nonce) as *const u8,
                 self.session_key.as_ptr(),
             )
         };
@@ -660,18 +660,20 @@ impl RawSocketTransmitter {
     }
 
     pub fn send_packet(&mut self, buf: Option<&[u8]>, flags: u8) -> io::Result<bool> {
-        let mut inject = |payload: &[u8]| {
-            let _ = self.inject_packet(payload);
+        let self_ptr: *mut RawSocketTransmitter = self;
+        let mut inject = move |payload: &[u8]| unsafe {
+            let _ = (*self_ptr).inject_packet(payload);
         };
-        let mut set_mark = |idx: u32| {
-            self.set_mark(idx);
+        let mut set_mark = move |idx: u32| unsafe {
+            (*self_ptr).set_mark(idx);
         };
         self.core.send_packet(buf, flags, &mut inject, &mut set_mark)
     }
 
     pub fn send_session_key(&mut self) {
-        let mut inject = |payload: &[u8]| {
-            let _ = self.inject_packet(payload);
+        let self_ptr: *mut RawSocketTransmitter = self;
+        let mut inject = move |payload: &[u8]| unsafe {
+            let _ = (*self_ptr).inject_packet(payload);
         };
         self.core.send_session_key(&mut inject);
     }

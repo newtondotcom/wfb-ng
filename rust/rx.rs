@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::ffi::CString;
 use std::io;
 use std::mem;
+use std::net::Ipv4Addr;
 use std::ptr;
 
 use libc;
@@ -15,6 +16,7 @@ use crate::radiotap::{
 };
 use crate::version::WFB_VERSION;
 use crate::wifibroadcast::*;
+use crate::{ipc_msg, ipc_msg_send, wfb_dbg, wfb_err};
 use crate::zfex;
 
 pub trait PacketLossListener {
@@ -45,9 +47,16 @@ pub enum RxMode {
 }
 
 const RX_RING_SIZE: usize = 40;
+const DLT_IEEE802_11_RADIO: i32 = 127;
 
 fn mod_n(x: i32, base: i32) -> i32 {
     (base + (x % base)) % base
+}
+
+fn parse_ipv4(addr: &str) -> io::Result<u32> {
+    addr.parse::<Ipv4Addr>()
+        .map(u32::from)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid IPv4 address"))
 }
 
 #[derive(Default)]
@@ -172,7 +181,7 @@ impl Forwarder {
 
         let mut saddr: libc::sockaddr_in = unsafe { mem::zeroed() };
         saddr.sin_family = libc::AF_INET as u16;
-        saddr.sin_addr.s_addr = unsafe { libc::inet_addr(CString::new(client_addr)?.as_ptr()) };
+        saddr.sin_addr.s_addr = parse_ipv4(client_addr)?;
         saddr.sin_port = (client_port as u16).to_be();
 
         Ok(Self { sockfd, saddr })
@@ -340,7 +349,7 @@ impl Aggregator {
 
         let mut saddr: libc::sockaddr_in = unsafe { mem::zeroed() };
         saddr.sin_family = libc::AF_INET as u16;
-        saddr.sin_addr.s_addr = unsafe { libc::inet_addr(CString::new(client_addr)?.as_ptr()) };
+        saddr.sin_addr.s_addr = parse_ipv4(client_addr)?;
         saddr.sin_port = (client_port as u16).to_be();
 
         let sender = Sender::Udp { fd: sockfd, addr: saddr };
@@ -831,7 +840,6 @@ impl BaseAggregator for Aggregator {
                 (buf.len() - mem::size_of::<WblockHdr>()) as u64,
                 buf.as_ptr(),
                 mem::size_of::<WblockHdr>() as u64,
-                ptr::null(),
                 &block_hdr.data_nonce as *const _ as *const u8,
                 self.session_key.as_ptr(),
             )
@@ -1057,7 +1065,7 @@ impl Receiver {
             }
 
             let link_encap = pcap_sys::pcap_datalink(pcap);
-            if link_encap != pcap_sys::DLT_IEEE802_11_RADIO as i32 {
+            if link_encap != DLT_IEEE802_11_RADIO {
                 return Err(io::Error::new(io::ErrorKind::Other, "unknown encapsulation"));
             }
 
