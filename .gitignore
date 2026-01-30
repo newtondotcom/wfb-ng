@@ -17,3 +17,7 @@ wfb_keygen
 wfb_ng/conf/site.cfg
 wfb_ng/conf/local.cfg
 .vscode/
+target/
+libsodium_test
+wfb_rtsp
+fec_test
